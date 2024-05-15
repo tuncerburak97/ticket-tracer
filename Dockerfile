@@ -1,21 +1,32 @@
-FROM golang:1.21
+# Build aşaması
+FROM golang:1.21 AS builder
 
+# Çalışma dizinini ayarla
 WORKDIR /app
 
-# Copy go mod and sum files
+# go mod ve go.sum dosyalarını kopyala
 COPY go.mod go.sum ./
 
-# Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
+# Bağımlılıkları indir
 RUN go mod download
 
-# Copy the source code into the container
+# Kaynak kodu konteynere kopyala
 COPY . .
 
-# Build the Go app
-RUN go build -o main .
+# Uygulamayı derle
+RUN GOOS=linux GOARCH=amd64 go build -o main .
 
-# Expose port 8080 to the outside world
+# Çalıştırma aşaması
+FROM debian:buster-slim
+
+# Çalışma dizinini ayarla
+WORKDIR /app
+
+# Derlenmiş binary'yi önceki aşamadan kopyala
+COPY --from=builder /app/main .
+
+# 8080 portunu dışa aç
 EXPOSE 8080
 
-# Command to run the executable
+# Çalıştır komutunu belirt
 CMD ["./main"]
