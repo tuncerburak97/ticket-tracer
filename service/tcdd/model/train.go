@@ -48,9 +48,8 @@ type SearchTrainRequestDetail struct {
 }
 
 type SearchTrainResponse struct {
-	RequestID string `json:"requestID"`
-	Message   string `json:"message"`
-	Success   bool   `json:"success"`
+	Message string `json:"message"`
+	Success bool   `json:"success"`
 }
 
 type ExternalInformation struct {

@@ -177,14 +177,13 @@ func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainReques
 				return nil, err
 			}
 			ts.trainScheduler.AddRequest(newRequest)
-			return &serviceModel.SearchTrainResponse{
-				Message:   "Request added to scheduler",
-				Success:   true,
-				RequestID: newRequest.RequestID,
-			}, nil
+
 		}
 	}
-	return nil, errors.New("no request found")
+	return &serviceModel.SearchTrainResponse{
+		Message: "Request added to scheduler",
+		Success: true,
+	}, nil
 
 }
 
