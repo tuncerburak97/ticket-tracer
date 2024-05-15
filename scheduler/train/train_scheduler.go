@@ -3,7 +3,6 @@ package train
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"sync"
 	"ticker-tracer/client/notification/mail"
 	emailModel "ticker-tracer/client/notification/mail/model"
@@ -123,12 +122,7 @@ func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainReq
 		log.Printf("Error searching trip: %v", search.TripSearchResponseInfo.ResponseMsg)
 		return
 	}
-	tourId, err := strconv.ParseInt(request.TourID, 10, 64)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	remainingDisabledNumber, found := ts.findTrip(search, tourId)
+	remainingDisabledNumber, found := ts.findTrip(search, request.TourID)
 	if found {
 		return ts.handleFoundTrip(request, int(remainingDisabledNumber))
 	}
@@ -150,15 +144,10 @@ func (ts *TrainScheduler) findTrip(search *tcddClientResponse.TripSearchResponse
 
 func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRequestDetail, remainingDisabledNumber int) (email string) {
 
-	tourId, err := strconv.ParseInt(request.TourID, 10, 64)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	placeSearch, err := ts.tcddClient.StationEmptyPlaceSearch(tcddClientRequest.StationEmptyPlaceSearchRequest{
 		ChannelCode:   "3",
 		Language:      0,
-		TourTitleID:   tourId,
+		TourTitleID:   request.TourID,
 		DepartureStID: request.DepartureStationID,
 		ArrivalStID:   int(request.ArrivalStationID),
 	})
