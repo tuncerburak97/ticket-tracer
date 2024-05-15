@@ -2,6 +2,7 @@ package tcdd
 
 import (
 	"encoding/json"
+	"log"
 	http2 "net/http"
 	"ticker-tracer/client/tcdd/model/request"
 	"ticker-tracer/client/tcdd/model/response"
@@ -43,6 +44,7 @@ func (c *TcddHttpClient) LoadAllStation(loadRequest request.StationLoadRequest) 
 	var stationLoadResponse response.StationLoadResponse
 	resp, err := httpClientInstance.SendHttpRequest(httpRequest)
 	if err != nil {
+		log.Printf("error [tcdd_client][LoadAllStation]: %v\n", err)
 		return nil, err
 	}
 	err = json.Unmarshal(resp, &stationLoadResponse)
@@ -63,6 +65,7 @@ func (c *TcddHttpClient) TripSearch(tripSearchRequest request.TripSearchRequest)
 	var tripSearchResponse response.TripSearchResponse
 	resp, err := httpClientInstance.SendHttpRequest(httpRequest)
 	if err != nil {
+		log.Printf("error [tcdd_client][TripSearch]: %v\n", err)
 		return nil, err
 	}
 	err = json.Unmarshal(resp, &tripSearchResponse)
@@ -82,6 +85,7 @@ func (c *TcddHttpClient) StationEmptyPlaceSearch(stationEmptyPlaceSearchRequest 
 	var stationEmptyPlaceSearchResponse response.StationEmptyPlaceSearchResponse
 	resp, err := httpClientInstance.SendHttpRequest(httpRequest)
 	if err != nil {
+		log.Printf("error [tcdd_client][StationEmptyPlaceSearch]: %v\n", err)
 		return nil, err
 	}
 	err = json.Unmarshal(resp, &stationEmptyPlaceSearchResponse)
