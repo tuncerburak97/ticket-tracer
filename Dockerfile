@@ -1,7 +1,6 @@
-# Build aşaması
-FROM golang:1.21 AS builder
+# Build ve Çalıştırma aşaması aynı imaj üzerinde
+FROM golang:1.21
 
-# Çalışma dizinini ayarla
 WORKDIR /app
 
 # go mod ve go.sum dosyalarını kopyala
@@ -14,16 +13,7 @@ RUN go mod download
 COPY . .
 
 # Uygulamayı derle
-RUN GOOS=linux GOARCH=amd64 go build -o main .
-
-# Çalıştırma aşaması
-FROM debian:buster-slim
-
-# Çalışma dizinini ayarla
-WORKDIR /app
-
-# Derlenmiş binary'yi önceki aşamadan kopyala
-COPY --from=builder /app/main .
+RUN go build -o main .
 
 # 8080 portunu dışa aç
 EXPOSE 8080
