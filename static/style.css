@@ -4,13 +4,16 @@
     --primary-hover: #2980b9;
     --background-color: #f4f4f4;
     --modal-background: white;
-    --modal-border: #888;
+    --modal-border: #ddd;
     --text-color: #333;
     --modal-shadow: rgba(0, 0, 0, 0.2);
+    --selected-bg-color: #e8f4fa;
+    --selected-border-color: #3498db;
+    --font-family: 'Helvetica Neue', Arial, sans-serif;
 }
 
 body {
-    font-family: Arial, sans-serif;
+    font-family: var(--font-family);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -45,6 +48,7 @@ select, input {
     padding: 8px;
     margin-bottom: 10px;
     box-sizing: border-box;
+    font-family: var(--font-family);
 }
 
 button {
@@ -55,6 +59,7 @@ button {
     cursor: pointer;
     border-radius: 4px;
     transition: background-color 0.3s ease;
+    font-family: var(--font-family);
 }
 
 button:hover {
@@ -82,16 +87,17 @@ button:hover {
     padding: 20px;
     border: 1px solid var(--modal-border);
     border-radius: 10px;
-    width: 90%;
-    max-width: 600px;
-    max-height: 60vh;
+    width: 95%;
+    max-width: 800px; /* Modal genişliğini artırdık */
+    max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 0 20px var(--modal-shadow);
     display: flex;
     flex-direction: column;
-    align-items: center; /* İç bileşenleri yatayda ortalamak için */
+    align-items: center;
     margin: auto;
     position: relative;
+    font-family: var(--font-family);
 }
 
 .close-btn {
@@ -112,8 +118,8 @@ button:hover {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
-    justify-items: center; /* Bileşenleri yatayda ortalamak için */
-    width: 100%; /* Full width to align content centrally */
+    justify-items: center;
+    width: 100%;
 }
 
 .train-detail {
@@ -123,13 +129,22 @@ button:hover {
     border-radius: 8px;
     background-color: #f9f9f9;
     cursor: pointer;
-    transition: background-color 0.3s ease;
-    width: 90%; /* Modal column alanı içinde genişliği ayarlamak için */
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    width: 90%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.train-detail:hover {
+    background-color: #f1f1f1;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
 .train-detail.selected {
-    background-color: #d3e0ea;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    background-color: var(--selected-bg-color);
+    border: 1px solid var(--selected-border-color);
+    box-shadow: 0 0 15px rgba(52, 152, 219, 0.5);
 }
 
 .train-detail.disabled {
@@ -139,15 +154,14 @@ button:hover {
 
 .train-detail h3 {
     margin: 0;
-    text-align: center; /* Başlıkları ortalamak için */
+    color: var(--primary-color);
+    font-size: 16px; /* Yazı boyutunu küçülttük */
 }
 
 .seat-info {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    flex-wrap: wrap;
+    flex-direction: column; /* Koltuk sayılarını alt alta göstermek için */
+    align-items: flex-end; /* Sağa yaslanmaları için */
 }
 
 .seat-info span {
@@ -199,5 +213,27 @@ button:hover {
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+/* Responsive styles for mobile */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        padding: 10px;
+    }
+
+    .train-details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .train-detail {
+        width: 100%;
+    }
+
+    .seat-info span {
+        font-size: 12px;
+        margin: 1px 3px;
+        padding: 2px 6px;
     }
 }

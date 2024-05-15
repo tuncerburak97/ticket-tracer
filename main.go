@@ -15,7 +15,7 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		err := gocron.Every(2).Minutes().Do(
+		err := gocron.Every(15).Seconds().Do(
 			train.GetTrainSchedulerInstance().Run,
 		)
 		if err != nil {

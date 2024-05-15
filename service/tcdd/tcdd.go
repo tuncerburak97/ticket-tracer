@@ -116,7 +116,6 @@ func sortToStationListByName(toStationList []serviceModel.ToStationList) {
 }
 
 func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainRequest) (*serviceModel.SearchTrainResponse, error) {
-
 	for _, request := range requests.Request {
 		parsedTime, err := time.Parse("Jan 2, 2006 03:04:05 PM", request.DepartureDate)
 		if err != nil {
@@ -133,27 +132,48 @@ func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainReques
 		if stations, err := ts.GetStations(); err != nil {
 			return nil, fmt.Errorf("error getting stations: %v", err)
 		} else {
-			for _, station := range stations.StationInformation {
-				if station.StationID == request.ArrivalStationID || station.StationID == request.DepartureStationID {
 
-					departureStation, err := GetStationByStationID(stations.StationInformation, request.DepartureStationID)
-					if err != nil {
-						return nil, fmt.Errorf("error getting departure station: %v", err)
-					}
-					found := false
-					for _, toStationID := range departureStation.ToStationIDs {
-						if toStationID == request.ArrivalStationID {
-							found = true
-						}
-					}
-					if !found {
-						return nil, errors.New("arrival station is not reachable from departure station")
-					}
+			if !checkStationIDIsValid(request.DepartureStationID, stations.StationInformation) || !checkStationIDIsValid(request.ArrivalStationID, stations.StationInformation) {
+				return nil, errors.New("invalid arrival or departure station id")
+			}
 
-					ts.trainScheduler.AddRequest(request)
-
+			departureStation, err := GetStationByStationID(stations.StationInformation, request.DepartureStationID)
+			if err != nil {
+				return nil, fmt.Errorf("error getting departure station: %v", err)
+			}
+			found := false
+			for _, toStationID := range departureStation.ToStationIDs {
+				if toStationID == request.ArrivalStationID {
+					found = true
 				}
 			}
+			if !found {
+				return nil, errors.New("arrival station is not reachable from departure station")
+			}
+
+			arrivalStation, _ := GetStationByStationID(stations.StationInformation, request.ArrivalStationID)
+
+			externalInfo := serviceModel.ExternalInformation{
+				DepartureStation: departureStation.StationName,
+				ArrivalStation:   arrivalStation.StationName,
+				DepartureDate:    request.DepartureDate,
+			}
+			newRequest := serviceModel.SearchTrainRequestDetail{
+				DepartureDate:       request.DepartureDate,
+				DepartureStationID:  request.DepartureStationID,
+				ArrivalStationID:    request.ArrivalStationID,
+				TourID:              request.TourID,
+				TrainID:             request.TrainID,
+				Email:               request.Email,
+				IsEmailNotification: request.IsEmailNotification,
+				ExternalInformation: externalInfo,
+			}
+			err = checkEmailRequestExceedThreshold(request.Email, *requests)
+			if err != nil {
+				return nil, err
+			}
+			ts.trainScheduler.AddRequest(newRequest)
+
 		}
 	}
 	return &serviceModel.SearchTrainResponse{
@@ -301,4 +321,27 @@ func GetStationByStationID(stations []clientResponseModel.StationInformation, st
 		}
 	}
 	return nil, fmt.Errorf("no station found with ID: %v", stationID)
+}
+
+func checkStationIDIsValid(stationID int64, stations []clientResponseModel.StationInformation) bool {
+	for _, station := range stations {
+		if station.StationID == stationID {
+			return true
+		}
+	}
+	return false
+
+}
+
+func checkEmailRequestExceedThreshold(email string, requests serviceModel.SearchTrainRequest) error {
+	foundedCount := 0
+	for _, request := range requests.Request {
+		if request.Email == email {
+			foundedCount++
+		}
+	}
+	if foundedCount > 5 {
+		return errors.New("exceed threshold")
+	}
+	return nil
 }

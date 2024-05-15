@@ -139,8 +139,8 @@ document.addEventListener('DOMContentLoaded', function () {
             request: selectedTrains.map(trainID => {
                 const detail = trainDetailsContainer.querySelector(`[data-train-id="${trainID}"]`);
                 return {
-                    trainID,
-                    tourID: detail.dataset.tourId,
+                    trainID: parseInt(trainID),
+                    tourID: parseInt(detail.dataset.tourId),
                     gidisTarih: formatDateForServer(detail.dataset.departureDate),
                     binisIstasyonId: parseInt(detail.dataset.departureStationId),
                     inisIstasyonId: parseInt(detail.dataset.arrivalStationId),
