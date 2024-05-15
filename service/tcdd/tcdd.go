@@ -3,6 +3,7 @@ package tcdd
 import (
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"regexp"
 	"sort"
 	"sync"
@@ -157,8 +158,11 @@ func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainReques
 				DepartureStation: departureStation.StationName,
 				ArrivalStation:   arrivalStation.StationName,
 				DepartureDate:    request.DepartureDate,
+				ArrivalDate:      arrivalStation.Date,
 			}
+			uuidWithHyphen := uuid.New()
 			newRequest := serviceModel.SearchTrainRequestDetail{
+				RequestID:           uuidWithHyphen.String(),
 				DepartureDate:       request.DepartureDate,
 				DepartureStationID:  request.DepartureStationID,
 				ArrivalStationID:    request.ArrivalStationID,
@@ -173,13 +177,15 @@ func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainReques
 				return nil, err
 			}
 			ts.trainScheduler.AddRequest(newRequest)
-
+			return &serviceModel.SearchTrainResponse{
+				Message:   "Request added to scheduler",
+				Success:   true,
+				RequestID: newRequest.RequestID,
+			}, nil
 		}
 	}
-	return &serviceModel.SearchTrainResponse{
-		Message: "Request added to scheduler",
-		Success: true,
-	}, nil
+	return nil, errors.New("no request found")
+
 }
 
 func (ts *TccdService) QueryTrain(request *serviceModel.QueryTrainRequest) (*serviceModel.QueryTrainResponse, error) {

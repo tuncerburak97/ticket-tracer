@@ -27,13 +27,9 @@ func NewMailHttpClient() *MailHttpClient {
 func (c *MailHttpClient) SendEmail(email model.Email) error {
 	auth := smtp.PlainAuth("", "ticker.tracker.system@gmail.com", "nhpa axli mwii utbj", "smtp.gmail.com")
 	addr := "smtp.gmail.com:587"
-
-	msg := []byte(
-		"From: " + "ticker.tracker.system@gmail.com" + "\r\n" +
-			"To: " + email.To + "\r\n" +
-			"Subject: " + email.Subject + "\r\n" +
-			"\r\n" + email.Body + "\r\n",
-	)
+	subject := "Subject: " + email.Subject + "\n"
+	mime := "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
+	msg := []byte(subject + mime + email.Body)
 
 	return smtp.SendMail(addr, auth, "ticker.tracker.system@gmail.com", []string{email.To}, msg)
 }

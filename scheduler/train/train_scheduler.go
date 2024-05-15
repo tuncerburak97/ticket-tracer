@@ -71,25 +71,25 @@ func (ts *TrainScheduler) Run() {
 		return
 	}
 
-	var emails = make([]string, 0)
+	var foundedRequestIDList = make([]string, 0)
 
 	if len(ts.requests) == 0 {
 		log.Printf("No request to process")
 	}
 
 	for _, searchTrainRequest := range ts.requests {
-		foundedMail := ts.processRequest(searchTrainRequest)
-		if foundedMail != "" {
-			emails = append(emails, foundedMail)
+		foundedRequestIDS := ts.processRequest(searchTrainRequest)
+		if foundedRequestIDS != "" {
+			foundedRequestIDList = append(foundedRequestIDList, foundedRequestIDS)
 		}
 	}
 
-	ts.RemoveRequestByEmail(emails)
+	ts.RemoveFoundedRequestByRequestID(foundedRequestIDList)
 }
 
-func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainRequestDetail) (email string) {
+func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainRequestDetail) (requestID string) {
 
-	log.Printf("Processing request: %s", request.Email)
+	log.Printf("Processing request: %s", request.RequestID)
 
 	criteria := tcddClientRequest.Criteria{
 		SalesChannel:       3,
@@ -124,9 +124,15 @@ func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainReq
 	}
 	remainingDisabledNumber, found := ts.findTrip(search, request.TourID)
 	if found {
-		return ts.handleFoundTrip(request, int(remainingDisabledNumber))
+		return ts.handleFoundTrip(request, int(remainingDisabledNumber), search.SearchResult[0].ArrivalDate)
 	}
-	log.Printf("Trip not found for request: %s", request.Email)
+	log.Printf("Trip not found for request: %s and email: %s date: %s from: %s to: %s",
+		request.RequestID,
+		request.Email,
+		request.DepartureDate,
+		request.ExternalInformation.DepartureStation,
+		request.ExternalInformation.ArrivalStation)
+
 	return ""
 
 }
@@ -142,7 +148,7 @@ func (ts *TrainScheduler) findTrip(search *tcddClientResponse.TripSearchResponse
 	return 0, false
 }
 
-func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRequestDetail, remainingDisabledNumber int) (email string) {
+func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRequestDetail, remainingDisabledNumber int, arrivalDate string) (requestID string) {
 
 	placeSearch, err := ts.tcddClient.StationEmptyPlaceSearch(tcddClientRequest.StationEmptyPlaceSearchRequest{
 		ChannelCode:   "3",
@@ -159,19 +165,34 @@ func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRe
 	totalEmptyPlace := calculateTotalEmptyPlace(placeSearch.EmptyPlaceList)
 	availablePlace := totalEmptyPlace - remainingDisabledNumber
 	externalInfo := request.ExternalInformation
+	externalInfo.ArrivalDate = arrivalDate
 	if availablePlace > 0 {
-		log.Printf("Found trip for request: %s, Date: %s, From: %s, To: %s",
+		log.Printf("Found trip for request: %s,Email: %s Date: %s, From: %s, To: %s",
+			request.RequestID,
 			request.Email,
 			request.DepartureDate,
 			externalInfo.DepartureStation,
 			externalInfo.ArrivalStation)
 
-		log.Printf("For Request: %s Total empty place: %d and total disabled number: %d", email, totalEmptyPlace, remainingDisabledNumber)
-		sendEmail(request.Email, availablePlace)
-		return request.Email
+		log.Printf("For Request: %s with Email: %s, Date: %s, From: %s, To: %s, Total Empty Place: %d, Remaining Disabled Number: %d",
+			requestID,
+			request.Email,
+			request.ExternalInformation.DepartureDate,
+			request.ExternalInformation.DepartureStation,
+			request.ExternalInformation.ArrivalStation,
+			totalEmptyPlace,
+			remainingDisabledNumber)
+		sendEmail(
+			request.Email,
+			availablePlace,
+			externalInfo.DepartureDate,
+			externalInfo.ArrivalDate,
+			externalInfo.DepartureStation, externalInfo.ArrivalStation)
+		return request.RequestID
 	}
 
-	log.Printf("No available place for request: %s, Date: %s, From: %s, To: %s",
+	log.Printf("No available place for request: %s, Email: %s, Date: %s, From: %s, To: %s",
+		request.RequestID,
 		request.Email,
 		request.DepartureDate,
 		externalInfo.DepartureStation,
@@ -188,13 +209,64 @@ func calculateTotalEmptyPlace(emptyPlaceList []tcddClientResponse.EmptyPlace) in
 	return totalEmptyPlace
 }
 
-func sendEmail(recipient string, availablePlace int) {
+func sendEmail(recipient string,
+	availablePlace int,
+	departureDate string,
+	arrivalDate string,
+	departureStation string,
+	arrivalStation string,
+) {
+
 	{
+		body := fmt.Sprintf(`
+  <html>
+  <head>
+  <style>
+  table {
+    font-family: Arial, sans-serif;
+    border-collapse: collapse;
+    width: 100%%;
+  }
+
+  td, th {
+    border: 1px solid #dddddd;
+    text-align: left;
+    padding: 8px;
+  }
+
+  tr:nth-child(even) {
+    background-color: #dddddd;
+  }
+  </style>
+  </head>
+  <body>
+  <p>Merhaba,</p>
+  <p>Aradığınız trende boş yer bulundu. &#128522;</p>
+  <table>
+    <tr>
+      <th>Kalan Boş Yer Sayısı</th>
+      <th>Kalkış Zamanı</th>
+      <th>Varış Zamanı</th>
+      <th>Kalkış İstasyonu</th>
+      <th>Varış İstasyonu</th>
+    </tr>
+    <tr>
+      <td>%d</td>
+      <td>%s</td>
+	  <td>%s</td>
+      <td>%s</td>
+      <td>%s</td>
+    </tr>
+  </table>
+  <p>Tekrardan bu yolculuga dair bildirimleri takip etmek isterseniz uygulama üzerinden aynı talebi oluşturabilirsiniz</p>
+  <p>İyi yolculuklar dileriz!</p>
+  </body>
+  </html>`, availablePlace, departureDate, arrivalDate, departureStation, arrivalStation)
 
 		email := emailModel.Email{
 			To:      recipient,
 			Subject: "Tren Bilet Uyarısı",
-			Body:    "Aradığınız trenin biletleri bulundu. Toplam boş yer sayısı:" + fmt.Sprint(availablePlace) + ". Maili aldıktan sonra tekrar bilgilendirme almak için yeni bir talepte bulunmanız gerekmektedir.",
+			Body:    body,
 		}
 
 		// Send the email
@@ -206,15 +278,20 @@ func sendEmail(recipient string, availablePlace int) {
 	}
 }
 
-func (ts *TrainScheduler) RemoveRequestByEmail(emails []string) {
+func (ts *TrainScheduler) RemoveFoundedRequestByRequestID(foundedRequestIDList []string) {
 	newRequests := make([]tcddServiceModel.SearchTrainRequestDetail, 0)
 
 	for _, request := range ts.requests {
 		found := false
-		for _, email := range emails {
-			if request.Email == email {
+		for _, foundedRequestID := range foundedRequestIDList {
+			if request.RequestID == foundedRequestID {
 				found = true
-				log.Printf("Removing request: %s", request.Email)
+				log.Printf("Removing request: %s with Email: %s, Date: %s, From: %s, To: %s",
+					request.RequestID,
+					request.Email,
+					request.DepartureDate,
+					request.ExternalInformation.DepartureStation,
+					request.ExternalInformation.ArrivalStation)
 				break
 			}
 		}

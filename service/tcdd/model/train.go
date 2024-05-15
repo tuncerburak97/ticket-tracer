@@ -36,6 +36,7 @@ type SearchTrainRequest struct {
 }
 
 type SearchTrainRequestDetail struct {
+	RequestID           string              `json:"requestID"`
 	DepartureDate       string              `json:"gidisTarih"`
 	DepartureStationID  int64               `json:"binisIstasyonId"`
 	ArrivalStationID    int64               `json:"inisIstasyonId"`
@@ -47,14 +48,16 @@ type SearchTrainRequestDetail struct {
 }
 
 type SearchTrainResponse struct {
-	Message string `json:"message"`
-	Success bool   `json:"success"`
+	RequestID string `json:"requestID"`
+	Message   string `json:"message"`
+	Success   bool   `json:"success"`
 }
 
 type ExternalInformation struct {
 	DepartureStation string `json:"departureStation"`
 	ArrivalStation   string `json:"arrivalStation"`
 	DepartureDate    string `json:"departureDate"`
+	ArrivalDate      string `json:"arrivalDate"`
 }
 
 type StationInformation struct {
