@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sefer Ara</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Sefer Ara</h1>
+    <div class="form-group">
+        <label for="from-station">Nereden</label>
+        <select id="from-station" required>
+            <option value="">İstasyon Seç</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="to-station">Nereye</label>
+        <select id="to-station" required disabled>
+            <option value="">İstasyon Seç</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="departure-date">Gidiş Tarihi</label>
+        <input type="date" id="departure-date" required>
+    </div>
+    <button id="search-btn">Sorgula</button>
+</div>
+
+<div id="modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <div id="train-details" class="train-details-grid"></div>
+        <button id="add-btn">Ekle</button>
+    </div>
+</div>
+
+<!-- Success Modal -->
+<div id="success-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close-btn success-close-btn">&times;</span>
+        <h2>Talebiniz başarı ile alındı</h2>
+        <p>Uygun yer bulunması durumunda mail adresinize bilgilendirme yapılacaktır.</p>
+    </div>
+</div>
+
+<div id="loading" class="loading" style="display: none;">
+    <div class="loading-content">
+        <div class="spinner"></div>
+        <p>Lütfen bekleyiniz...</p>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
