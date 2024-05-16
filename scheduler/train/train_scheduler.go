@@ -3,10 +3,12 @@ package train
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"ticker-tracer/client/notification/mail"
 	emailModel "ticker-tracer/client/notification/mail/model"
 	"ticker-tracer/client/tcdd"
+	tcddClientCommonModel "ticker-tracer/client/tcdd/model/common"
 	tcddClientRequest "ticker-tracer/client/tcdd/model/request"
 	tcddClientResponse "ticker-tracer/client/tcdd/model/response"
 	tcddServiceModel "ticker-tracer/service/tcdd/model"
@@ -70,12 +72,7 @@ func (ts *TrainScheduler) Run() {
 		log.Printf("Error getting stations: %v", err)
 		return
 	}
-
 	var foundedRequestIDList = make([]string, 0)
-
-	if len(ts.requests) == 0 {
-		log.Printf("No request to process")
-	}
 
 	for _, searchTrainRequest := range ts.requests {
 		foundedRequestIDS := ts.processRequest(searchTrainRequest)
@@ -136,18 +133,6 @@ func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainReq
 	return ""
 
 }
-
-func (ts *TrainScheduler) findTrip(search *tcddClientResponse.TripSearchResponse, tourID int64) (int64, bool) {
-	for _, trip := range search.SearchResult {
-		if trip.TourID == tourID {
-			if len(trip.WagonTypesEmptyPlace) > 0 {
-				return trip.WagonTypesEmptyPlace[0].RemainingDisabledNumber, true
-			}
-		}
-	}
-	return 0, false
-}
-
 func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRequestDetail, remainingDisabledNumber int, arrivalDate string) (requestID string) {
 
 	placeSearch, err := ts.tcddClient.StationEmptyPlaceSearch(tcddClientRequest.StationEmptyPlaceSearchRequest{
@@ -167,27 +152,26 @@ func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRe
 	externalInfo := request.ExternalInformation
 	externalInfo.ArrivalDate = arrivalDate
 	if availablePlace > 0 {
-		log.Printf("Found trip for request: %s,Email: %s Date: %s, From: %s, To: %s",
-			request.RequestID,
-			request.Email,
-			request.DepartureDate,
-			externalInfo.DepartureStation,
-			externalInfo.ArrivalStation)
 
 		log.Printf("For Request: %s with Email: %s, Date: %s, From: %s, To: %s, Total Empty Place: %d, Remaining Disabled Number: %d",
-			requestID,
+			request.RequestID,
 			request.Email,
-			request.ExternalInformation.DepartureDate,
-			request.ExternalInformation.DepartureStation,
-			request.ExternalInformation.ArrivalStation,
+			externalInfo.DepartureDate,
+			externalInfo.DepartureStation,
+			externalInfo.ArrivalStation,
 			totalEmptyPlace,
 			remainingDisabledNumber)
+
+		locationSelectionWagonRequestList := getLocationSelectionWagonRequestList(placeSearch.EmptyPlaceList, request)
+		reservedSeats := ts.reserveSeat(locationSelectionWagonRequestList, request, externalInfo)
+
 		sendEmail(
 			request.Email,
 			availablePlace,
 			externalInfo.DepartureDate,
 			externalInfo.ArrivalDate,
-			externalInfo.DepartureStation, externalInfo.ArrivalStation)
+			externalInfo.DepartureStation, externalInfo.ArrivalStation,
+			reservedSeats)
 		return request.RequestID
 	}
 
@@ -199,6 +183,118 @@ func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRe
 		externalInfo.ArrivalStation)
 
 	return ""
+}
+
+func (ts *TrainScheduler) reserveSeat(
+	locationSelectionWagonRequestList []tcddClientRequest.LocationSelectionWagonRequest,
+	request tcddServiceModel.SearchTrainRequestDetail,
+	externalInfo tcddServiceModel.ExternalInformation,
+) []tcddClientCommonModel.ReserveSeatDetail {
+
+	reservedSeats := make([]tcddClientCommonModel.ReserveSeatDetail, 0)
+	totalReservedSeat := 0
+
+	for _, locationSelectionWagonRequest := range locationSelectionWagonRequestList {
+		seats := ts.processWagonRequest(locationSelectionWagonRequest, request, externalInfo, &totalReservedSeat)
+		if seats != nil {
+			reservedSeats = append(reservedSeats, seats...)
+		}
+	}
+
+	return reservedSeats
+}
+
+func (ts *TrainScheduler) processWagonRequest(
+	locationSelectionWagonRequest tcddClientRequest.LocationSelectionWagonRequest,
+	request tcddServiceModel.SearchTrainRequestDetail,
+	externalInfo tcddServiceModel.ExternalInformation,
+	totalReservedSeat *int,
+) []tcddClientCommonModel.ReserveSeatDetail {
+
+	reservedSeats := make([]tcddClientCommonModel.ReserveSeatDetail, 0)
+
+	locationSelectionWagonResponse, err := ts.tcddClient.LocationSelectionWagon(locationSelectionWagonRequest)
+	if err != nil {
+		log.Printf("Error selecting wagon: %v", err)
+		return nil
+	}
+	if locationSelectionWagonResponse.ResponseInfo.ResponseCode != "000" {
+		log.Printf("Error selecting wagon: %v", locationSelectionWagonResponse.ResponseInfo.ResponseMsg)
+		return nil
+	}
+	for _, locationSelectionWagon := range locationSelectionWagonResponse.LocationSelectionWagonResponseData.SeatInformationList {
+		if locationSelectionWagon.Status == 0 {
+			if *totalReservedSeat >= 3 {
+				break
+			}
+
+			checkSeatRequest := tcddClientRequest.CheckSeatRequest{
+				ChannelCode:             "3",
+				Language:                0,
+				SelectedSeatWagonNumber: locationSelectionWagon.WagonOrderNo,
+				SelectedSeatNumber:      locationSelectionWagon.SeatNo,
+				TourId:                  strconv.FormatInt(request.TourID, 10),
+			}
+			checkSeatResponse, err := ts.tcddClient.CheckSeat(checkSeatRequest)
+			if err != nil {
+				log.Printf("Error reserving seat: %v", err)
+				return nil
+			}
+			if checkSeatResponse.ResponseInfo.ResponseCode != "000" {
+				log.Printf("Error reserving seat: %v", checkSeatResponse.ResponseInfo.ResponseMsg)
+				return nil
+			}
+
+			reserveSeatRequest := tcddClientRequest.ReserveSeatRequest{
+				ChannelCode:        "3",
+				Language:           0,
+				TourID:             int(request.TourID),
+				WagonOrder:         locationSelectionWagon.WagonOrderNo,
+				SeatNo:             locationSelectionWagon.SeatNo,
+				Gender:             "M",
+				ArrivalStationID:   int(request.ArrivalStationID),
+				DepartureStationID: int(request.DepartureStationID),
+				Minute:             10,
+				Huawei:             false,
+			}
+
+			reserveSeatResponse, err := ts.tcddClient.ReserveSeat(reserveSeatRequest)
+			if err != nil {
+				log.Printf("Error reserving seat: %v", err)
+				return nil
+			}
+			if reserveSeatResponse.ResponseInfo.ResponseCode != "000" {
+				log.Printf("Error reserving seat: %v", reserveSeatResponse.ResponseInfo.ResponseMsg)
+				return nil
+			}
+
+			log.Printf("Seat reserved for request: %s, Email: %s, Date: %s, From: %s, To: %s",
+				request.RequestID,
+				request.Email,
+				request.DepartureDate,
+				externalInfo.DepartureStation,
+				externalInfo.ArrivalStation)
+
+			reservedSeats = append(reservedSeats, tcddClientCommonModel.ReserveSeatDetail{
+				SeatNo:       locationSelectionWagon.SeatNo,
+				WagonOrderNo: locationSelectionWagon.WagonOrderNo,
+			})
+			*totalReservedSeat++
+		}
+	}
+
+	return reservedSeats
+}
+
+func (ts *TrainScheduler) findTrip(search *tcddClientResponse.TripSearchResponse, tourID int64) (int64, bool) {
+	for _, trip := range search.SearchResult {
+		if trip.TourID == tourID {
+			if len(trip.WagonTypesEmptyPlace) > 0 {
+				return trip.WagonTypesEmptyPlace[0].RemainingDisabledNumber, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func calculateTotalEmptyPlace(emptyPlaceList []tcddClientResponse.EmptyPlace) int {
@@ -215,53 +311,81 @@ func sendEmail(recipient string,
 	arrivalDate string,
 	departureStation string,
 	arrivalStation string,
+	reservedSeats []tcddClientCommonModel.ReserveSeatDetail,
 ) {
 
 	{
 		body := fmt.Sprintf(`
-  <html>
-  <head>
-  <style>
-  table {
-    font-family: Arial, sans-serif;
-    border-collapse: collapse;
-    width: 100%%;
-  }
+<html>
+<head>
+<style>
+table {
+  font-family: Arial, sans-serif;
+  border-collapse: collapse;
+  width: 100%%;
+}
 
-  td, th {
-    border: 1px solid #dddddd;
-    text-align: left;
-    padding: 8px;
-  }
+td, th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 8px;
+}
 
-  tr:nth-child(even) {
-    background-color: #dddddd;
-  }
-  </style>
-  </head>
-  <body>
-  <p>Merhaba,</p>
-  <p>Aradığınız trende boş yer bulundu. &#128522;</p>
-  <table>
-    <tr>
-      <th>Kalan Boş Yer Sayısı</th>
-      <th>Kalkış Zamanı</th>
-      <th>Varış Zamanı</th>
-      <th>Kalkış İstasyonu</th>
-      <th>Varış İstasyonu</th>
-    </tr>
-    <tr>
-      <td>%d</td>
-      <td>%s</td>
-	  <td>%s</td>
-      <td>%s</td>
-      <td>%s</td>
-    </tr>
-  </table>
-  <p>Tekrardan bu yolculuga dair bildirimleri takip etmek isterseniz uygulama üzerinden aynı talebi oluşturabilirsiniz</p>
-  <p>İyi yolculuklar dileriz!</p>
-  </body>
-  </html>`, availablePlace, departureDate, arrivalDate, departureStation, arrivalStation)
+tr:nth-child(even) {
+  background-color: #dddddd;
+}
+
+.margin-top {
+  margin-top: 20px;
+}
+</style>
+</head>
+<body>
+<p>Merhaba,</p>
+<p>Aradığınız trende boş yer bulundu. &#128522;</p>
+<table>
+  <tr>
+    <th>Kalan Boş Yer Sayısı</th>
+    <th>Kalkış Zamanı</th>
+    <th>Varış Zamanı</th>
+    <th>Kalkış İstasyonu</th>
+    <th>Varış İstasyonu</th>
+  </tr>
+  <tr>
+    <td>%d</td>
+    <td>%s</td>
+    <td>%s</td>
+    <td>%s</td>
+    <td>%s</td>
+  </tr>
+</table>
+
+<div class="margin-top">
+<p>Sizin için aşağıdaki koltuklar rezerv edilmiştir. 10 dakika boyunca koltuk diğer kullanıcılar için görünür olmayacaktır. Bu maili aldıktan 10 dakika sonra koltuk kilidi kalkmış olacaktır. İlgili koltuğu 10 dakika sonra kontrol edebilirsiniz!</p>
+<table>
+  <tr>
+    <th>Vagon No</th>
+    <th>Koltuk No</th>
+  </tr>
+`, availablePlace, departureDate, arrivalDate, departureStation, arrivalStation)
+
+		for _, seat := range reservedSeats {
+			body += fmt.Sprintf(`
+  <tr>
+    <td>%d</td>
+    <td>%s</td>
+  </tr>
+`, seat.WagonOrderNo, seat.SeatNo)
+		}
+
+		body += `
+</table>
+</div>
+
+<p>Tekrardan bu yolculuga dair bildirimleri takip etmek isterseniz uygulama üzerinden aynı talebi oluşturabilirsiniz</p>
+<p>İyi yolculuklar dileriz!</p>
+</body>
+</html>`
 
 		email := emailModel.Email{
 			To:      recipient,
@@ -301,4 +425,21 @@ func (ts *TrainScheduler) RemoveFoundedRequestByRequestID(foundedRequestIDList [
 	}
 
 	ts.requests = newRequests
+}
+
+func getLocationSelectionWagonRequestList(emptyPlaceList []tcddClientResponse.EmptyPlace, request tcddServiceModel.SearchTrainRequestDetail) []tcddClientRequest.LocationSelectionWagonRequest {
+	response := make([]tcddClientRequest.LocationSelectionWagonRequest, 0)
+	for _, emptyPlace := range emptyPlaceList {
+		if emptyPlace.EmptyPlace > 0 {
+			response = append(response, tcddClientRequest.LocationSelectionWagonRequest{
+				ChannelCode:          "3",
+				Language:             0,
+				TourTitleID:          strconv.FormatInt(request.TourID, 10),
+				WagonOrderNo:         emptyPlace.WagonOrderNo,
+				DepartureStationName: request.ExternalInformation.DepartureStation,
+				ArrivalStationName:   request.ExternalInformation.ArrivalStation,
+			})
+		}
+	}
+	return response
 }

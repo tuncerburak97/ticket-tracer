@@ -1,3 +1,4 @@
+
 document.addEventListener('DOMContentLoaded', function () {
     const fromStationSelect = document.getElementById('from-station');
     const toStationSelect = document.getElementById('to-station');

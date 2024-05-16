@@ -13,6 +13,9 @@ type TcddClientInterface interface {
 	LoadAllStation(loadRequest request.StationLoadRequest) (*response.StationLoadResponse, error)
 	TripSearch(tripSearchRequest request.TripSearchRequest) (*response.TripSearchResponse, error)
 	StationEmptyPlaceSearch(stationEmptyPlaceSearchRequest request.StationEmptyPlaceSearchRequest) (*response.StationEmptyPlaceSearchResponse, error)
+	CheckSeat(reserveSeatRequest request.CheckSeatRequest) (*response.CheckSeatResponse, error)
+	LocationSelectionWagon(locationSelectionWagonRequest request.LocationSelectionWagonRequest) (*response.LocationSelectionWagonResponse, error)
+	ReserveSeat(reserveSeatRequest request.ReserveSeatRequest) (*response.ReserveSeatResponse, error)
 }
 
 type TcddHttpClient struct {
@@ -90,4 +93,63 @@ func (c *TcddHttpClient) StationEmptyPlaceSearch(stationEmptyPlaceSearchRequest 
 	}
 	err = json.Unmarshal(resp, &stationEmptyPlaceSearchResponse)
 	return &stationEmptyPlaceSearchResponse, nil
+}
+
+func (c *TcddHttpClient) CheckSeat(reserveSeatRequest request.CheckSeatRequest) (*response.CheckSeatResponse, error) {
+	httpClientInstance := http.GetHttpClientInstance()
+
+	httpRequest := http.HttpRequest{
+		Method:  http2.MethodPost,
+		URL:     "https://api-yebsp.tcddtasimacilik.gov.tr/koltuk/klCheck",
+		Body:    reserveSeatRequest,
+		Headers: map[string]interface{}{"Content-Type": "application/json", "Authorization": "Basic ZGl0cmF2b3llYnNwOmRpdHJhMzQhdm8u"},
+	}
+	var reserveSeatResponse response.CheckSeatResponse
+	resp, err := httpClientInstance.SendHttpRequest(httpRequest)
+	if err != nil {
+		log.Printf("error [tcdd_client][CheckSeat]: %v\n", err)
+		return nil, err
+	}
+	err = json.Unmarshal(resp, &reserveSeatResponse)
+	return &reserveSeatResponse, nil
+}
+
+func (c *TcddHttpClient) LocationSelectionWagon(locationSelectionWagonRequest request.LocationSelectionWagonRequest) (*response.LocationSelectionWagonResponse, error) {
+	httpClientInstance := http.GetHttpClientInstance()
+
+	httpRequest := http.HttpRequest{
+		Method:  http2.MethodPost,
+		URL:     "https://api-yebsp.tcddtasimacilik.gov.tr/vagon/vagonHaritasindanYerSecimi",
+		Body:    locationSelectionWagonRequest,
+		Headers: map[string]interface{}{"Content-Type": "application/json", "Authorization": "Basic ZGl0cmF2b3llYnNwOmRpdHJhMzQhdm8u"},
+	}
+	var locationSelectionWagonResponse response.LocationSelectionWagonResponse
+	resp, err := httpClientInstance.SendHttpRequest(httpRequest)
+	if err != nil {
+		log.Printf("error [tcdd_client][LocationSelectionWagon]: %v\n", err)
+		return nil, err
+	}
+	err = json.Unmarshal(resp, &locationSelectionWagonResponse)
+	return &locationSelectionWagonResponse, nil
+
+}
+
+func (c *TcddHttpClient) ReserveSeat(reserveSeatRequest request.ReserveSeatRequest) (*response.ReserveSeatResponse, error) {
+	httpClientInstance := http.GetHttpClientInstance()
+
+	httpRequest := http.HttpRequest{
+		Method:  http2.MethodPost,
+		URL:     "https://api-yebsp.tcddtasimacilik.gov.tr/koltuk/klSec",
+		Body:    reserveSeatRequest,
+		Headers: map[string]interface{}{"Content-Type": "application/json", "Authorization": "Basic ZGl0cmF2b3llYnNwOmRpdHJhMzQhdm8u"},
+	}
+	var reserveSeatResponse response.ReserveSeatResponse
+	resp, err := httpClientInstance.SendHttpRequest(httpRequest)
+	if err != nil {
+		log.Printf("error [tcdd_client][ReserveSeat]: %v\n", err)
+		return nil, err
+	}
+	err = json.Unmarshal(resp, &reserveSeatResponse)
+	return &reserveSeatResponse, nil
+
 }
