@@ -40,6 +40,7 @@ type SearchTrainRequestDetail struct {
 	DepartureDate       string              `json:"gidisTarih"`
 	DepartureStationID  int64               `json:"binisIstasyonId"`
 	ArrivalStationID    int64               `json:"inisIstasyonId"`
+	ArrivalDate         string              `json:"inisTarih"`
 	TourID              int64               `json:"tourID"`
 	TrainID             int64               `json:"trainID"`
 	Email               string              `json:"email"`

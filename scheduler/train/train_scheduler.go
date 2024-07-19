@@ -12,6 +12,7 @@ import (
 	tcddClientRequest "ticker-tracer/client/tcdd/model/request"
 	tcddClientResponse "ticker-tracer/client/tcdd/model/response"
 	tcddServiceModel "ticker-tracer/service/tcdd/model"
+	"time"
 )
 
 type TrainScheduler struct {
@@ -165,20 +166,36 @@ func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRe
 		locationSelectionWagonRequestList := getLocationSelectionWagonRequestList(placeSearch.EmptyPlaceList, request)
 		reservedSeats := ts.reserveSeat(locationSelectionWagonRequestList, request, externalInfo)
 
+		departureDateFormat, err := time.Parse("Jan 02, 2006 03:04:05 PM", request.DepartureDate)
+		if err != nil {
+			fmt.Println("Tarih parse edilemedi:", err)
+			return
+		}
+
+		arrivalDateFormat, err := time.Parse("Jan 02, 2006 03:04:05 PM", request.ArrivalDate)
+		if err != nil {
+			fmt.Println("Tarih parse edilemedi:", err)
+			return
+		}
+
+		// Türkçe tarih formatını oluşturma ve yazdırma
+		departureDateStr := formatTurkishDate(departureDateFormat)
+		arrivalDateStr := formatTurkishDate(arrivalDateFormat)
 		sendEmail(
 			request.Email,
 			availablePlace,
-			externalInfo.DepartureDate,
-			externalInfo.ArrivalDate,
+			departureDateStr,
+			arrivalDateStr,
 			externalInfo.DepartureStation, externalInfo.ArrivalStation,
 			reservedSeats)
 		return request.RequestID
 	}
 
-	log.Printf("No available place for request: %s, Email: %s, Date: %s, From: %s, To: %s",
+	log.Printf("No available place for request: %s, Email: %s, Departure Date: %s, Arrival Date: %s, From: %s, To: %s",
 		request.RequestID,
 		request.Email,
 		request.DepartureDate,
+		request.ArrivalDate,
 		externalInfo.DepartureStation,
 		externalInfo.ArrivalStation)
 
@@ -442,4 +459,32 @@ func getLocationSelectionWagonRequestList(emptyPlaceList []tcddClientResponse.Em
 		}
 	}
 	return response
+}
+
+func formatTurkishDate(t time.Time) string {
+	// Ay isimlerini Türkçe karşılıklarıyla değiştirin
+	months := map[string]string{
+		"January":   "Ocak",
+		"February":  "Şubat",
+		"March":     "Mart",
+		"April":     "Nisan",
+		"May":       "Mayıs",
+		"June":      "Haziran",
+		"July":      "Temmuz",
+		"August":    "Ağustos",
+		"September": "Eylül",
+		"October":   "Ekim",
+		"November":  "Kasım",
+		"December":  "Aralık",
+	}
+
+	// Günü, ayı, yılı, saati ve dakikayı formatlayın
+	day := t.Day()
+	month := months[t.Month().String()]
+	year := t.Year()
+	hour := t.Hour()
+	minute := t.Minute()
+
+	// Türkçe formatta string oluşturma
+	return fmt.Sprintf("%02d-%s-%d %02d:%02d", day, month, year, hour, minute)
 }

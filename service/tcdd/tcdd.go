@@ -166,6 +166,7 @@ func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainReques
 				DepartureDate:       request.DepartureDate,
 				DepartureStationID:  request.DepartureStationID,
 				ArrivalStationID:    request.ArrivalStationID,
+				ArrivalDate:         request.ArrivalDate,
 				TourID:              request.TourID,
 				TrainID:             request.TrainID,
 				Email:               request.Email,
