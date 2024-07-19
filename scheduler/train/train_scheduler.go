@@ -181,6 +181,7 @@ func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRe
 		// Türkçe tarih formatını oluşturma ve yazdırma
 		departureDateStr := formatTurkishDate(departureDateFormat)
 		arrivalDateStr := formatTurkishDate(arrivalDateFormat)
+
 		sendEmail(
 			request.Email,
 			availablePlace,
