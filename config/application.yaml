@@ -12,3 +12,4 @@ postgres:
   maxIdleConns: 15
   maxOpenConns: 50
   connMaxLifetime: 5
+
