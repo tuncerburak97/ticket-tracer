@@ -12,6 +12,8 @@ type TicketRequestRepository interface {
 	FindById(id string) (*entity.TicketRequest, error)
 	FindByStatus(status string) ([]entity.TicketRequest, error)
 	Update(ticketRequest *entity.TicketRequest) error
+	FindByMail(mail string) ([]entity.TicketRequest, error)
+	FindByMailAndStatus(mail, status string) ([]entity.TicketRequest, error)
 }
 
 type ticketRequestRepository struct {
@@ -62,4 +64,20 @@ func (r *ticketRequestRepository) FindByStatus(status string) ([]entity.TicketRe
 
 func (r *ticketRequestRepository) Update(ticketRequest *entity.TicketRequest) error {
 	return r.db.Save(ticketRequest).Error
+}
+
+func (r *ticketRequestRepository) FindByMail(mail string) ([]entity.TicketRequest, error) {
+	var ticketRequests []entity.TicketRequest
+	if err := r.db.Find(&ticketRequests, "email = ?", mail).Error; err != nil {
+		return nil, err
+	}
+	return ticketRequests, nil
+}
+
+func (r *ticketRequestRepository) FindByMailAndStatus(mail, status string) ([]entity.TicketRequest, error) {
+	var ticketRequests []entity.TicketRequest
+	if err := r.db.Find(&ticketRequests, "email = ? AND status = ?", mail, status).Error; err != nil {
+		return nil, err
+	}
+	return ticketRequests, nil
 }

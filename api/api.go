@@ -5,6 +5,7 @@ import (
 	_ "github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/monitor"
+	router2 "ticker-tracer/api/router"
 	"ticker-tracer/handler/router"
 )
 
@@ -37,6 +38,10 @@ func RegisterRoutes(app *fiber.App) {
 
 	tcdd := app.Group("/tcdd")
 	router.Tcdd(tcdd)
+
+	// ticket-request
+	ticketRequest := app.Group("/ticket-request")
+	router2.TicketRequest(ticketRequest)
 
 	// not found
 	app.Use(func(c *fiber.Ctx) error {
