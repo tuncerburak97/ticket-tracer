@@ -144,7 +144,12 @@ func (ts *TrainScheduler) processRequest(request entity.TicketRequest) (requestI
 	}
 	remainingDisabledNumber, found := ts.findTrip(search, request.TourID)
 	if found {
-		return ts.handleFoundTrip(request, int(remainingDisabledNumber), search.SearchResult[0].ArrivalDate)
+		var requestId = ts.handleFoundTrip(request, int(remainingDisabledNumber), search.SearchResult[0].ArrivalDate)
+		if requestId != "" {
+			return requestId
+		}
+		return ts.handleNotFoundTrip(request)
+
 	}
 
 	return ts.handleNotFoundTrip(request)
@@ -167,15 +172,6 @@ func (ts *TrainScheduler) handleFoundTrip(request entity.TicketRequest, remainin
 	totalEmptyPlace := calculateTotalEmptyPlace(placeSearch.EmptyPlaceList)
 	availablePlace := totalEmptyPlace - remainingDisabledNumber
 	if availablePlace > 0 {
-
-		log.Printf("For Request: %s with Email: %s, Date: %s, From: %s, To: %s, Total Empty Place: %d, Remaining Disabled Number: %d",
-			request.ID,
-			request.Email,
-			request.DepartureDate,
-			request.DepartureStation,
-			request.ArrivalStation,
-			totalEmptyPlace,
-			remainingDisabledNumber)
 
 		locationSelectionWagonRequestList := getLocationSelectionWagonRequestList(placeSearch.EmptyPlaceList, request)
 		reservedSeats := ts.reserveSeat(locationSelectionWagonRequestList, request)
@@ -210,6 +206,13 @@ func (ts *TrainScheduler) handleFoundTrip(request entity.TicketRequest, remainin
 		} else {
 			arrivalDateStr = request.ArrivalDate
 		}
+
+		log.Printf("Found trip for request: %s and email: %s date: %s from: %s to: %s",
+			request.ID,
+			request.Email,
+			request.DepartureDate,
+			request.DepartureStation,
+			request.ArrivalStation)
 
 		sendEmail(
 			request.Email,
@@ -502,13 +505,17 @@ func formatTurkishDate(t time.Time) string {
 }
 
 func (ts *TrainScheduler) handleNotFoundTrip(request entity.TicketRequest) (requestID string) {
-	log.Printf("Trip not found for request: %s and email: %s date: %s from: %s to: %s",
-		request.ID,
-		request.Email,
-		request.DepartureDate,
-		request.DepartureStation,
-		request.ArrivalStation)
 
+	/*
+		log.Printf("Trip not found for request: %s and email: %s date: %s from: %s to: %s",
+			request.ID,
+			request.Email,
+			request.DepartureDate,
+			request.DepartureStation,
+			request.ArrivalStation)
+
+
+	*/
 	totalAttempt := request.TotalAttempt
 	request.TotalAttempt = totalAttempt + 1
 	now := time.Now()
