@@ -11,17 +11,18 @@ import (
 	tcddClientCommonModel "ticker-tracer/client/tcdd/model/common"
 	tcddClientRequest "ticker-tracer/client/tcdd/model/request"
 	tcddClientResponse "ticker-tracer/client/tcdd/model/response"
-	tcddServiceModel "ticker-tracer/service/tcdd/model"
+	"ticker-tracer/model/entity"
+	"ticker-tracer/repository"
 	"time"
 )
 
 type TrainScheduler struct {
-	tcddClient *tcdd.TcddHttpClient
-	mailClient *mail.MailHttpClient
-	stations   *tcddClientResponse.StationLoadResponse
-	once       sync.Once
-	requests   []tcddServiceModel.SearchTrainRequestDetail
-	mu         sync.Mutex
+	tcddClient          *tcdd.TcddHttpClient
+	mailClient          *mail.MailHttpClient
+	stations            *tcddClientResponse.StationLoadResponse
+	once                sync.Once
+	mu                  sync.Mutex
+	isZeroRequestLogged bool
 }
 
 var trainSchedulerInstance *TrainScheduler
@@ -30,6 +31,7 @@ func GetTrainSchedulerInstance() *TrainScheduler {
 	if trainSchedulerInstance == nil {
 		trainSchedulerInstance = NewTrainScheduler(tcdd.GetTcddHttpClientInstance(),
 			mail.GetMailHttpClientInstance())
+		trainSchedulerInstance.isZeroRequestLogged = false
 	}
 	return trainSchedulerInstance
 
@@ -37,16 +39,12 @@ func GetTrainSchedulerInstance() *TrainScheduler {
 
 func NewTrainScheduler(tcddClient *tcdd.TcddHttpClient,
 	mailClient *mail.MailHttpClient,
+
 ) *TrainScheduler {
 	return &TrainScheduler{
 		tcddClient: tcddClient,
 		mailClient: mailClient,
-		requests:   make([]tcddServiceModel.SearchTrainRequestDetail, 0),
 	}
-}
-
-func (ts *TrainScheduler) AddRequest(request tcddServiceModel.SearchTrainRequestDetail) {
-	ts.requests = append(ts.requests, request)
 }
 
 func (ts *TrainScheduler) getStations() (*tcddClientResponse.StationLoadResponse, error) {
@@ -67,7 +65,24 @@ func (ts *TrainScheduler) Run() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
-	log.Printf("Running train scheduler with %d requests", len(ts.requests))
+	var ticketRequestRepository = repository.GetTicketRequestRepository()
+	var pendingRequests, err = ticketRequestRepository.FindByStatus("PENDING")
+	if err != nil {
+		log.Printf("Error getting pending requests: %v", err)
+		return
+	}
+
+	if len(pendingRequests) == 0 && !ts.isZeroRequestLogged {
+		log.Printf("No pending request found")
+		ts.isZeroRequestLogged = true
+		return
+	}
+
+	if len(pendingRequests) == 0 {
+		return
+	}
+
+	log.Printf("Running train scheduler with %d requests", len(pendingRequests))
 
 	if _, err := ts.getStations(); err != nil {
 		log.Printf("Error getting stations: %v", err)
@@ -75,27 +90,34 @@ func (ts *TrainScheduler) Run() {
 	}
 	var foundedRequestIDList = make([]string, 0)
 
-	for _, searchTrainRequest := range ts.requests {
+	for _, searchTrainRequest := range pendingRequests {
 		foundedRequestIDS := ts.processRequest(searchTrainRequest)
 		if foundedRequestIDS != "" {
 			foundedRequestIDList = append(foundedRequestIDList, foundedRequestIDS)
 		}
 	}
 
-	ts.RemoveFoundedRequestByRequestID(foundedRequestIDList)
+	var filterFoundedRequests = make([]entity.TicketRequest, 0)
+	for _, foundedRequestID := range foundedRequestIDList {
+		for _, request := range pendingRequests {
+			if request.ID == foundedRequestID {
+				filterFoundedRequests = append(filterFoundedRequests, request)
+			}
+		}
+	}
+
+	ts.UpdateTicketRequestStatusToFound(filterFoundedRequests)
 }
 
-func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainRequestDetail) (requestID string) {
-
-	log.Printf("Processing request: %s", request.RequestID)
+func (ts *TrainScheduler) processRequest(request entity.TicketRequest) (requestID string) {
 
 	criteria := tcddClientRequest.Criteria{
 		SalesChannel:       3,
-		DepartureStation:   request.ExternalInformation.DepartureStation,
+		DepartureStation:   request.DepartureStation,
 		IsMapDeparture:     false,
-		ArrivalStation:     request.ExternalInformation.ArrivalStation,
+		ArrivalStation:     request.ArrivalStation,
 		IsMapArrival:       false,
-		DepartureDate:      request.ExternalInformation.DepartureDate,
+		DepartureDate:      request.DepartureDate,
 		IsRegional:         false,
 		OperationType:      0,
 		PassengerCount:     1,
@@ -124,17 +146,11 @@ func (ts *TrainScheduler) processRequest(request tcddServiceModel.SearchTrainReq
 	if found {
 		return ts.handleFoundTrip(request, int(remainingDisabledNumber), search.SearchResult[0].ArrivalDate)
 	}
-	log.Printf("Trip not found for request: %s and email: %s date: %s from: %s to: %s",
-		request.RequestID,
-		request.Email,
-		request.DepartureDate,
-		request.ExternalInformation.DepartureStation,
-		request.ExternalInformation.ArrivalStation)
 
-	return ""
+	return ts.handleNotFoundTrip(request)
 
 }
-func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRequestDetail, remainingDisabledNumber int, arrivalDate string) (requestID string) {
+func (ts *TrainScheduler) handleFoundTrip(request entity.TicketRequest, remainingDisabledNumber int, arrivalDate string) (requestID string) {
 
 	placeSearch, err := ts.tcddClient.StationEmptyPlaceSearch(tcddClientRequest.StationEmptyPlaceSearchRequest{
 		ChannelCode:   "3",
@@ -150,70 +166,75 @@ func (ts *TrainScheduler) handleFoundTrip(request tcddServiceModel.SearchTrainRe
 
 	totalEmptyPlace := calculateTotalEmptyPlace(placeSearch.EmptyPlaceList)
 	availablePlace := totalEmptyPlace - remainingDisabledNumber
-	externalInfo := request.ExternalInformation
-	externalInfo.ArrivalDate = arrivalDate
 	if availablePlace > 0 {
 
 		log.Printf("For Request: %s with Email: %s, Date: %s, From: %s, To: %s, Total Empty Place: %d, Remaining Disabled Number: %d",
-			request.RequestID,
+			request.ID,
 			request.Email,
-			externalInfo.DepartureDate,
-			externalInfo.DepartureStation,
-			externalInfo.ArrivalStation,
+			request.DepartureDate,
+			request.DepartureStation,
+			request.ArrivalStation,
 			totalEmptyPlace,
 			remainingDisabledNumber)
 
 		locationSelectionWagonRequestList := getLocationSelectionWagonRequestList(placeSearch.EmptyPlaceList, request)
-		reservedSeats := ts.reserveSeat(locationSelectionWagonRequestList, request, externalInfo)
+		reservedSeats := ts.reserveSeat(locationSelectionWagonRequestList, request)
 
+		departureValidation := true
 		departureDateFormat, err := time.Parse("Jan 02, 2006 03:04:05 PM", request.DepartureDate)
 		if err != nil {
-			fmt.Println("Tarih parse edilemedi:", err)
-			return
+			fmt.Println("Departure date parse edilemedi:", err)
+			fmt.Println("Departure Date:", request.DepartureDate)
+			departureValidation = false
 		}
 
+		arrivalValidation := true
 		arrivalDateFormat, err := time.Parse("Jan 02, 2006 03:04:05 PM", request.ArrivalDate)
 		if err != nil {
-			fmt.Println("Tarih parse edilemedi:", err)
-			return
+			fmt.Println("Arrival Date parse edilemedi:", err)
+			fmt.Println("Arrival Date:", request.ArrivalDate)
+			arrivalValidation = false
 		}
 
 		// Türkçe tarih formatını oluşturma ve yazdırma
-		departureDateStr := formatTurkishDate(departureDateFormat)
-		arrivalDateStr := formatTurkishDate(arrivalDateFormat)
+		var departureDateStr string
+		if departureValidation {
+			departureDateStr = formatTurkishDate(departureDateFormat)
+		} else {
+			departureDateStr = request.DepartureDate
+		}
+
+		var arrivalDateStr string
+		if arrivalValidation {
+			arrivalDateStr = formatTurkishDate(arrivalDateFormat)
+		} else {
+			arrivalDateStr = request.ArrivalDate
+		}
 
 		sendEmail(
 			request.Email,
 			availablePlace,
 			departureDateStr,
 			arrivalDateStr,
-			externalInfo.DepartureStation, externalInfo.ArrivalStation,
+			request.DepartureStation,
+			request.ArrivalStation,
 			reservedSeats)
-		return request.RequestID
+		return request.ID
 	}
-
-	log.Printf("No available place for request: %s, Email: %s, Departure Date: %s, Arrival Date: %s, From: %s, To: %s",
-		request.RequestID,
-		request.Email,
-		request.DepartureDate,
-		request.ArrivalDate,
-		externalInfo.DepartureStation,
-		externalInfo.ArrivalStation)
 
 	return ""
 }
 
 func (ts *TrainScheduler) reserveSeat(
 	locationSelectionWagonRequestList []tcddClientRequest.LocationSelectionWagonRequest,
-	request tcddServiceModel.SearchTrainRequestDetail,
-	externalInfo tcddServiceModel.ExternalInformation,
+	request entity.TicketRequest,
 ) []tcddClientCommonModel.ReserveSeatDetail {
 
 	reservedSeats := make([]tcddClientCommonModel.ReserveSeatDetail, 0)
 	totalReservedSeat := 0
 
 	for _, locationSelectionWagonRequest := range locationSelectionWagonRequestList {
-		seats := ts.processWagonRequest(locationSelectionWagonRequest, request, externalInfo, &totalReservedSeat)
+		seats := ts.processWagonRequest(locationSelectionWagonRequest, request, &totalReservedSeat)
 		if seats != nil {
 			reservedSeats = append(reservedSeats, seats...)
 		}
@@ -224,8 +245,7 @@ func (ts *TrainScheduler) reserveSeat(
 
 func (ts *TrainScheduler) processWagonRequest(
 	locationSelectionWagonRequest tcddClientRequest.LocationSelectionWagonRequest,
-	request tcddServiceModel.SearchTrainRequestDetail,
-	externalInfo tcddServiceModel.ExternalInformation,
+	request entity.TicketRequest,
 	totalReservedSeat *int,
 ) []tcddClientCommonModel.ReserveSeatDetail {
 
@@ -287,11 +307,11 @@ func (ts *TrainScheduler) processWagonRequest(
 			}
 
 			log.Printf("Seat reserved for request: %s, Email: %s, Date: %s, From: %s, To: %s",
-				request.RequestID,
+				request.ID,
 				request.Email,
 				request.DepartureDate,
-				externalInfo.DepartureStation,
-				externalInfo.ArrivalStation)
+				request.DepartureStation,
+				request.ArrivalStation)
 
 			reservedSeats = append(reservedSeats, tcddClientCommonModel.ReserveSeatDetail{
 				SeatNo:       locationSelectionWagon.SeatNo,
@@ -420,32 +440,23 @@ tr:nth-child(even) {
 	}
 }
 
-func (ts *TrainScheduler) RemoveFoundedRequestByRequestID(foundedRequestIDList []string) {
-	newRequests := make([]tcddServiceModel.SearchTrainRequestDetail, 0)
+func (ts *TrainScheduler) UpdateTicketRequestStatusToFound(foundedRequests []entity.TicketRequest) {
 
-	for _, request := range ts.requests {
-		found := false
-		for _, foundedRequestID := range foundedRequestIDList {
-			if request.RequestID == foundedRequestID {
-				found = true
-				log.Printf("Removing request: %s with Email: %s, Date: %s, From: %s, To: %s",
-					request.RequestID,
-					request.Email,
-					request.DepartureDate,
-					request.ExternalInformation.DepartureStation,
-					request.ExternalInformation.ArrivalStation)
-				break
-			}
-		}
-		if !found {
-			newRequests = append(newRequests, request)
+	var ticketRequestRepository = repository.GetTicketRequestRepository()
+	now := time.Now()
+	for _, request := range foundedRequests {
+		request.Status = "FOUND"
+		request.UpdatedAt = now
+		totalAttempt := request.TotalAttempt
+		request.TotalAttempt = totalAttempt + 1
+		err := ticketRequestRepository.Update(&request)
+		if err != nil {
+			log.Printf("Error updating ticket request status to found: %v", err)
 		}
 	}
-
-	ts.requests = newRequests
 }
 
-func getLocationSelectionWagonRequestList(emptyPlaceList []tcddClientResponse.EmptyPlace, request tcddServiceModel.SearchTrainRequestDetail) []tcddClientRequest.LocationSelectionWagonRequest {
+func getLocationSelectionWagonRequestList(emptyPlaceList []tcddClientResponse.EmptyPlace, request entity.TicketRequest) []tcddClientRequest.LocationSelectionWagonRequest {
 	response := make([]tcddClientRequest.LocationSelectionWagonRequest, 0)
 	for _, emptyPlace := range emptyPlaceList {
 		if emptyPlace.EmptyPlace > 0 {
@@ -454,8 +465,8 @@ func getLocationSelectionWagonRequestList(emptyPlaceList []tcddClientResponse.Em
 				Language:             0,
 				TourTitleID:          strconv.FormatInt(request.TourID, 10),
 				WagonOrderNo:         emptyPlace.WagonOrderNo,
-				DepartureStationName: request.ExternalInformation.DepartureStation,
-				ArrivalStationName:   request.ExternalInformation.ArrivalStation,
+				DepartureStationName: request.DepartureStation,
+				ArrivalStationName:   request.ArrivalStation,
 			})
 		}
 	}
@@ -488,4 +499,26 @@ func formatTurkishDate(t time.Time) string {
 
 	// Türkçe formatta string oluşturma
 	return fmt.Sprintf("%02d-%s-%d %02d:%02d", day, month, year, hour, minute)
+}
+
+func (ts *TrainScheduler) handleNotFoundTrip(request entity.TicketRequest) (requestID string) {
+	log.Printf("Trip not found for request: %s and email: %s date: %s from: %s to: %s",
+		request.ID,
+		request.Email,
+		request.DepartureDate,
+		request.DepartureStation,
+		request.ArrivalStation)
+
+	totalAttempt := request.TotalAttempt
+	request.TotalAttempt = totalAttempt + 1
+	now := time.Now()
+	request.UpdatedAt = now
+
+	var ticketRequestRepository = repository.GetTicketRequestRepository()
+	err := ticketRequestRepository.Update(&request)
+	if err != nil {
+		log.Printf("Error updating ticket request: %v", err)
+	}
+
+	return ""
 }

@@ -13,7 +13,7 @@ type RequestBody struct {
 	Value string `json:"value"`
 }
 
-func InitServer() {
+func InitServer() error {
 	app := fiber.New(fiber.Config{
 		Immutable: true,
 	})
@@ -26,8 +26,9 @@ func InitServer() {
 	RegisterRoutes(app)
 	err := app.Listen(":" + "8080")
 	if err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 
 }
 func RegisterRoutes(app *fiber.App) {

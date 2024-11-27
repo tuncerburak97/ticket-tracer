@@ -10,16 +10,17 @@ import (
 	"ticker-tracer/client/tcdd"
 	clientRequestModel "ticker-tracer/client/tcdd/model/request"
 	clientResponseModel "ticker-tracer/client/tcdd/model/response"
-	"ticker-tracer/scheduler/train"
+	"ticker-tracer/model/entity"
+	"ticker-tracer/repository"
 	serviceModel "ticker-tracer/service/tcdd/model"
 	"time"
 )
 
 type TccdService struct {
-	tcddClient     *tcdd.TcddHttpClient
-	trainScheduler *train.TrainScheduler
-	stations       *clientResponseModel.StationLoadResponse
-	once           sync.Once
+	tcddClient              *tcdd.TcddHttpClient
+	ticketRequestRepository repository.TicketRequestRepository
+	stations                *clientResponseModel.StationLoadResponse
+	once                    sync.Once
 }
 
 type TccdServiceInterface interface {
@@ -31,8 +32,8 @@ type TccdServiceInterface interface {
 
 func NewTcddService() *TccdService {
 	return &TccdService{
-		tcddClient:     tcdd.GetTcddHttpClientInstance(),
-		trainScheduler: train.GetTrainSchedulerInstance(),
+		tcddClient:              tcdd.GetTcddHttpClientInstance(),
+		ticketRequestRepository: repository.GetTicketRequestRepository(),
 	}
 }
 
@@ -154,31 +155,32 @@ func (ts *TccdService) AddSearchRequest(requests *serviceModel.SearchTrainReques
 
 			arrivalStation, _ := GetStationByStationID(stations.StationInformation, request.ArrivalStationID)
 
-			externalInfo := serviceModel.ExternalInformation{
-				DepartureStation: departureStation.StationName,
-				ArrivalStation:   arrivalStation.StationName,
-				DepartureDate:    request.DepartureDate,
-				ArrivalDate:      arrivalStation.Date,
-			}
-			uuidWithHyphen := uuid.New()
-			newRequest := serviceModel.SearchTrainRequestDetail{
-				RequestID:           uuidWithHyphen.String(),
-				DepartureDate:       request.DepartureDate,
-				DepartureStationID:  request.DepartureStationID,
-				ArrivalStationID:    request.ArrivalStationID,
-				ArrivalDate:         request.ArrivalDate,
-				TourID:              request.TourID,
-				TrainID:             request.TrainID,
-				Email:               request.Email,
-				IsEmailNotification: request.IsEmailNotification,
-				ExternalInformation: externalInfo,
-			}
 			err = checkEmailRequestExceedThreshold(request.Email, *requests)
 			if err != nil {
 				return nil, err
 			}
-			ts.trainScheduler.AddRequest(newRequest)
 
+			uuidWithHyphen := uuid.New()
+			ticketRequestEntity := entity.TicketRequest{
+				ID:                  uuidWithHyphen.String(),
+				DepartureDate:       request.DepartureDate,
+				DepartureStationID:  request.DepartureStationID,
+				DepartureStation:    departureStation.StationName,
+				ArrivalDate:         request.ArrivalDate,
+				ArrivalStationID:    request.ArrivalStationID,
+				ArrivalStation:      arrivalStation.StationName,
+				TourID:              request.TourID,
+				TrainID:             request.TrainID,
+				Email:               request.Email,
+				IsEmailNotification: request.IsEmailNotification,
+				Status:              "PENDING",
+				TotalAttempt:        0,
+			}
+
+			err = ts.ticketRequestRepository.Create(&ticketRequestEntity)
+			if err != nil {
+				return nil, fmt.Errorf("error creating ticket request: %v", err)
+			}
 		}
 	}
 	return &serviceModel.SearchTrainResponse{

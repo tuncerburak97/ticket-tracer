@@ -1,0 +1,14 @@
+server:
+  internalPort: 8080
+  externalPort: 8080
+
+postgres:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbName: postgres
+  sslMode: disable
+  maxIdleConns: 15
+  maxOpenConns: 50
+  connMaxLifetime: 5
